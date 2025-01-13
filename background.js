@@ -12,24 +12,50 @@ function getVideoInfo() {
     const content = document.querySelector("#microformat > player-microformat-renderer > script"); // simple way to get the video info
     console.log("Here's your content: ")
     console.log(JSON.parse(content.innerHTML));
-    chrome.runtime.sendMessage({action: "openPopup", content: JSON.parse(content.innerHTML)}); // send message to background.js
+    chrome.runtime.sendMessage({action: "openVideoSuggestionPopup", content: JSON.parse(content.innerHTML)}); // send message to background.js
 }
 
 let videoInfo = {};
 
+chrome.storage.local.set({"savedVideos": []}, () => {
+    console.log("Saved videos initialized!");
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => { // message handler for background.js
-    if (message.action === "openPopup") {
-        //chrome.action.setPopup({popup: "hello.html"});
+    if (message.action === "openVideoSuggestionPopup") {
         console.log("OPEN POPUP CALLED!!");
         console.log(message.content);
         videoInfo = message.content;
+        chrome.action.setPopup({popup: "addVideoSuggestion.html"});
         chrome.action.openPopup();
+        chrome.action.setPopup({popup: "savedMedia.html"});
     }
-    else if (message.action === "getData") {
+    else if (message.action === "getVideoInfo") {
         console.log("GET DATA CALLED!!!");
         console.log(videoInfo);
         sendResponse(videoInfo);
     }
+    else if (message.action === "saveVideo") {
+        console.log("SAVE VIDEO CALLED!!!");
+        chrome.storage.local.get(["savedVideos"], (result) => {
+            const savedVideos = result.savedVideos || [];
+            savedVideos.push(videoInfo.name);
+            console.log(savedVideos);
+            chrome.storage.local.set({"savedVideos": savedVideos}, () => {
+                console.log("Video saved!");
+            });
+        });
+        sendResponse(videoInfo);
+    }
+    else if (message.action === "getSavedVideos") {
+        console.log("GET SAVED VIDEOS");
+        chrome.storage.local.get(["savedVideos"], (result) => {
+            console.log(result.savedVideos);
+            sendResponse(result.savedVideos || []);
+        });
+        return true; 
+    }
+    return true; 
 });
 
 
