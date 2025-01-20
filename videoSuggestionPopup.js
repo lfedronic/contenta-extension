@@ -1,11 +1,10 @@
-console.log("HERE I AM!!!!!!");
-chrome.runtime.sendMessage({ action: "getVideoInfo" }, (response) => {
+let videoName = "";
+
+chrome.runtime.sendMessage({action: "getVideoInfo"}, (response) => {
     console.log("Data received in popup:", response);
-
-    // Display data in the popup
-    const displayElement = document.getElementById("displayData");
-
-    displayElement.textContent = response.name;
+    const showVideo= document.querySelector("#videoName");
+    videoName = response.content;
+    showVideo.textContent = videoName;
 });
 
 let saveVideoButton = document.querySelector("#saveVideo");
@@ -13,7 +12,7 @@ let saveVideoButton = document.querySelector("#saveVideo");
 saveVideoButton.addEventListener("click", () => {
     saveVideoButton.textContent = "Saved!";
     saveVideoButton.style.backgroundColor = "green";
-    chrome.runtime.sendMessage({ action: "saveVideo", content: saveVideoButton }, (response) => {
+    chrome.runtime.sendMessage({ action: "saveVideo", content: videoName }, (response) => {
         console.log("Video saved:", response);
         
     });

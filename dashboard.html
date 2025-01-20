@@ -3,17 +3,19 @@
 <head>
     <meta charset="UTF-8" />
     <title>Dashboard</title>
-    <link rel="stylesheet" href="dashboard.css">
+    <script src="dashboard.js" defer></script>
 </head>
 <body>
-    <h1>Dashboard</h1>
-    <div id="dashboardContainer">
-        <div id="videoSuggestionContainer">
-            <h2>Video Suggestion</h2>
-            <button id="videoSuggestionButton">Get Video Suggestion</button>
+    <div id="container" style = "min-width: 300px">
+        <button id="addThisVideo">Add this video</button>
+        <h3>Your saved videos</h3>
+        <div id="savedVideos">
+        <p>You have no saved videos!</p>  
         </div>
-        <div id="savedMediaContainer">
-            <h2>Saved Media</h2>
-        </div>
+        <hr/>
+        <form id="addVideoForm">
+            <input type="text" id="videoNameForm" placeholder="Video name" required>
+            <button type="submit" id="submitManualVideoButton">Add video</button>
+        </form>
     </div>
 </html>

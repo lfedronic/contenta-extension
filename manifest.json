@@ -15,7 +15,6 @@
     "service_worker": "background.js"
     },
     "action": {
-        "default_popup": "dashboard.html",
         "default_icon": "hello_extensions.png"
     }
     
