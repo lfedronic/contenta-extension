@@ -23,7 +23,8 @@ const processMessage = {
     "getVideoDuration": handleGetVideoDuration,
     "sendingVideoInfo": handleSendingVideoInfo,
     "saveSessionWatchtimes": handleSaveSessionWatchtimes,
-    "processAlreadyShown": handleProcessAlreadyShown
+    "processAlreadyShown": handleProcessAlreadyShown,
+    "openDashboard": handleOpenDashboard
 }
 
 // MESSAGE HANDLERS
@@ -41,8 +42,8 @@ function handleSaveVideo(message, sender, sendResponse) {
     console.log("Requested from: ", sender);
 
     chrome.storage.local.get(["savedVideos"], (result) => {
-        chrome.storage.session.get(["currentVideoUrl", "currentVideoName"], (currentResult) => {
-            if (!currentResult.currentVideoName || !currentResult.currentVideoUrl) {
+        chrome.storage.session.get(["currentVideoUrl", "currentVideoName", "currentThumbnailUrl"], (currentResult) => {
+            if (!currentResult.currentVideoName || !currentResult.currentVideoUrl || !currentResult.currentThumbnailUrl) {
                 console.log("No video to save");
                 sendResponse({"status": "incomplete"});
                 return;
@@ -53,7 +54,7 @@ function handleSaveVideo(message, sender, sendResponse) {
                 sendResponse({"status": "duplicate"});
                 return;
             }
-            savedVideos[currentResult.currentVideoUrl] = currentResult.currentVideoName;
+            savedVideos[currentResult.currentVideoUrl] = {"name": currentResult.currentVideoName, "timeSaved": new Date().toLocaleString(), "thumbnailUrl": currentResult.currentThumbnailUrl};
             console.log(savedVideos);
             chrome.storage.local.set({"savedVideos": savedVideos}, () => {
                 console.log("Video saved!");
@@ -144,12 +145,16 @@ function handleProcessAlreadyShown(message, sender, sendResponse) {
     sendResponse({"content": "null"});
 }
 
+function handleOpenDashboard(message, sender, sendResponse) {
+    chrome.tabs.create({url: "dashboard.html"});
+}
 
 // HELPER FUNCTIONS
 
 function getUpdatedVideoInfo() { // used when user goes from one youtube video to the next 
     const videoInfo = document.querySelector("head > title").textContent.replace(" - YouTube", "");
-    chrome.storage.session.set({"currentVideoName": videoInfo.name, "currentVideoUrl": videoInfo.url});
+    console.log("Video info: ", videoInfo);
+    chrome.storage.session.set({"currentVideoName": videoInfo.name, "currentVideoUrl": videoInfo.url, "currentThumbnailUrl": videoInfo.thumbnailUrl});
     return videoInfo;
 }
 
@@ -168,6 +173,11 @@ function getDuration() {
     const videoInfo = JSON.parse(document.querySelector("#microformat > player-microformat-renderer > script").innerHTML); // simple way to get the video info
     const duration = parseInt(videoInfo.duration.match(/\d+/)[0], 10);
     return duration;
+}
+
+function getThumbnailUrl() {
+    const videoInfo = JSON.parse(document.querySelector("#microformat > player-microformat-renderer > script").innerHTML); // simple way to get the video info
+    return videoInfo.thumbnailUrl[0];
 }
 
 function extractWatchTime(url, regex){
@@ -256,7 +266,7 @@ function getActiveTabVideoInfo(tabId, callback) {
             videoInfo["title"] = tab.title;
             console.log("Tab info from getActiveTab", tab);
         } else {
-            callback(null);
+            callback("no tab info found");
         }
     });
 
@@ -266,22 +276,35 @@ function getActiveTabVideoInfo(tabId, callback) {
     }, (response) => {
         if (response) {
             videoInfo["duration"] = response[0].result;
-            callback(videoInfo);
         }
         else {
-            callback(null);
+            callback("no duration found");
         }
         
     });
+
+    chrome.scripting.executeScript({
+        target: {tabId: tabId},
+        func: getThumbnailUrl
+    }, (response) => {
+        if (response) {
+            videoInfo["thumbnailUrl"] = response[0].result;
+            callback(videoInfo);
+        }
+        else {
+            callback("no thumbnail found");
+        }
+    });
+    
 }
 
 
 chrome.tabs.onActivated.addListener((activeInfo) => {
     chrome.storage.session.set({"alreadyShown": false});
     getActiveTabVideoInfo(activeInfo.tabId, (tabInfo) => {
-        if (tabInfo) {
+        if (tabInfo && tabInfo.url) {
             if (tabInfo.url.startsWith("https://www.youtube.com/watch")) {
-                chrome.storage.session.set({"currentVideoUrl": tabInfo.url, "currentVideoName": tabInfo.title.replace(" - YouTube", ""), "currentVideoDuration": tabInfo.duration});
+                chrome.storage.session.set({"currentVideoUrl": tabInfo.url, "currentVideoName": tabInfo.title.replace(" - YouTube", ""), "currentVideoDuration": tabInfo.duration, "currentThumbnailUrl": tabInfo.thumbnailUrl});
             }
         }
         else {
@@ -295,8 +318,9 @@ chrome.webNavigation.onCompleted.addListener((details) => { // event listener fo
     chrome.storage.session.set({"alreadyShown": false});
     setTimeout(() => {
         getActiveTabVideoInfo(details.tabId, (tabInfo) => {
+            console.log("Tab info from onActivated", tabInfo);
             if (tabInfo) {
-                chrome.storage.session.set({"currentVideoUrl": tabInfo.url, "currentVideoName": tabInfo.title.replace(" - YouTube", ""), "currentVideoDuration": tabInfo.duration});
+                chrome.storage.session.set({"currentVideoUrl": tabInfo.url, "currentVideoName": tabInfo.title.replace(" - YouTube", ""), "currentVideoDuration": tabInfo.duration, "currentThumbnailUrl": tabInfo.thumbnailUrl});
             }
             else {
                 console.log("Tab Info is not accessible in web nav.");
@@ -311,9 +335,10 @@ chrome.webNavigation.onHistoryStateUpdated.addListener((details) => { // event l
     chrome.storage.session.set({"alreadyShown": false});
     setTimeout(() => {
         getActiveTabVideoInfo(details.tabId, (tabInfo) => {
+            console.log("Tab info from onActivated", tabInfo);
             if (tabInfo) {
                 console.log("Duration info: ", tabInfo.duration);
-                chrome.storage.session.set({"currentVideoUrl": tabInfo.url, "currentVideoName": tabInfo.title.replace(" - YouTube", ""), "currentVideoDuration": tabInfo.duration});
+                chrome.storage.session.set({"currentVideoUrl": tabInfo.url, "currentVideoName": tabInfo.title.replace(" - YouTube", ""), "currentVideoDuration": tabInfo.duration, "currentThumbnailUrl": tabInfo.thumbnailUrl});
             }
             else {
                 console.log("Tab Info is not accessible in onHistoryUpdated.");
