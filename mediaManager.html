@@ -4,18 +4,26 @@
     <meta charset="UTF-8" />
     <title>Dashboard</title>
     <script src="mediaManager.js" defer></script>
+    <style>
+        #heading {
+            margin-bottom: 5px; /* Adjust this value as needed */
+        }
+    </style>
 </head>
 <body>
-    <div id="container" style = "min-width: 300px">
+    <div id="container" style="min-width: 300px">
         <button id="addThisVideo">Add this video</button>
-        <h3>Recently saved videos</h3>
+        <h3 id="heading">Recently saved videos</h3>
+        <hr/>
         <div id="savedVideos">
-        <p>You have no saved videos!</p>  
+            <p>You have no saved videos!</p>  
         </div>
         <hr/>
-        <form id="addVideoForm">
+        <!-- <form id="addVideoForm">
             <input type="text" id="videoNameForm" placeholder="Video name" required>
             <button type="submit" id="submitManualVideoButton">Add video</button>
-        </form>
+        </form> -->
+        <button id="openDashboard">Open Dashboard</button>
     </div>
+</body>
 </html>
