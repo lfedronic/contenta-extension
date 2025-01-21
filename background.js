@@ -22,7 +22,8 @@ const processMessage = {
     "getSavedVideos": handleGetSavedVideos,
     "getVideoDuration": handleGetVideoDuration,
     "sendingVideoInfo": handleSendingVideoInfo,
-    "saveSessionWatchtimes": handleSaveSessionWatchtimes
+    "saveSessionWatchtimes": handleSaveSessionWatchtimes,
+    "processAlreadyShown": handleProcessAlreadyShown
 }
 
 // MESSAGE HANDLERS
@@ -86,7 +87,7 @@ function handleGetVideoDuration(message, sender, sendResponse) {
 
 }
 
-function handleSendingVideoInfo(message, sender, sendResponse) {
+function handleSendingVideoInfo(message, sender, sendResponse) { // passes thru injected script to reach this (don't access storage directly)
     const newWatchedTime = message.content.newWatchedTime;
     
     const durationInSecs = message.content.videoDuration
@@ -103,15 +104,20 @@ function handleSendingVideoInfo(message, sender, sendResponse) {
         console.log("Updating current session video");
         const prevWatchTime = sessionWatchtimes[url];
         sessionWatchtimes[url] += newWatchedTime;
-        if (prevWatchTime + newWatchedTime >= DURATION_PERCENTAGE * durationInSecs) {
-            console.log(`Video watched for more than ${DURATION_PERCENTAGE * 100}% of its duration`);
-            chrome.action.setPopup({popup: "addVideoSuggestion.html"});
-            chrome.action.openPopup();
-            chrome.action.setPopup({popup: "mediaManager.html"});
-            
-        }
-        const percentWatched = (prevWatchTime + newWatchedTime) / durationInSecs;
-        console.log("Percent watched: ", (percentWatched * 100).toFixed(2) );   
+        
+        chrome.storage.session.get(["alreadyShown"], (response) => {
+            const alreadyShown = response.alreadyShown;
+            if (!alreadyShown && prevWatchTime + newWatchedTime >= DURATION_PERCENTAGE * durationInSecs) {
+                chrome.storage.session.set({"alreadyShown": true});
+                console.log(`Video watched for more than ${DURATION_PERCENTAGE * 100}% of its duration`);
+                chrome.action.setPopup({popup: "addVideoSuggestion.html"});
+                chrome.action.openPopup();
+                chrome.action.setPopup({popup: "mediaManager.html"});
+                
+            }
+            const percentWatched = (prevWatchTime + newWatchedTime) / durationInSecs;
+            console.log("Percent watched: ", (percentWatched * 100).toFixed(2) );   
+        });          
     }
     console.log(sessionWatchtimes );
     sendResponse({"sessionWatchtimes": sessionWatchtimes, "do": "nothing"});
@@ -121,6 +127,21 @@ function handleSaveSessionWatchtimes(message, sender, sendResponse) {
     console.log("Saving session watchtimes");
     chrome.storage.session.set({"sessionWatchtimes": message.content});
     sendResponse({"status": "received"});
+}
+
+function handleProcessAlreadyShown(message, sender, sendResponse) {
+    if (message.content === "toggleTrue") {
+        chrome.storage.session.set({"alreadyShown": true});
+    } else if (message.content === "toggleFalse") {
+        chrome.storage.session.set({"alreadyShown": false});
+    } else {
+        chrome.storage.session.get(["alreadyShown"], (result) => {
+            console.log("Already shown: ", result.alreadyShown);
+            sendResponse({"content": result.alreadyShown});
+            return;
+        });
+    }
+    sendResponse({"content": "null"});
 }
 
 
@@ -256,6 +277,7 @@ function getActiveTabVideoInfo(tabId, callback) {
 
 
 chrome.tabs.onActivated.addListener((activeInfo) => {
+    chrome.storage.session.set({"alreadyShown": false});
     getActiveTabVideoInfo(activeInfo.tabId, (tabInfo) => {
         if (tabInfo) {
             if (tabInfo.url.startsWith("https://www.youtube.com/watch")) {
@@ -270,6 +292,7 @@ chrome.tabs.onActivated.addListener((activeInfo) => {
 });
 
 chrome.webNavigation.onCompleted.addListener((details) => { // event listener for when the page is loaded
+    chrome.storage.session.set({"alreadyShown": false});
     setTimeout(() => {
         getActiveTabVideoInfo(details.tabId, (tabInfo) => {
             if (tabInfo) {
@@ -285,6 +308,7 @@ chrome.webNavigation.onCompleted.addListener((details) => { // event listener fo
 }, videoFilter);
 
 chrome.webNavigation.onHistoryStateUpdated.addListener((details) => { // event listener for when the page is updated (e.g. clicking on a video)
+    chrome.storage.session.set({"alreadyShown": false});
     setTimeout(() => {
         getActiveTabVideoInfo(details.tabId, (tabInfo) => {
             if (tabInfo) {
@@ -298,6 +322,9 @@ chrome.webNavigation.onHistoryStateUpdated.addListener((details) => { // event l
     }, LOADTIME);
 
 }, videoFilter);
+
+
+// HANDLE STORAGE CHANGES
 
 
 
