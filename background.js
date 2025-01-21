@@ -1,6 +1,6 @@
 // CONSTANTS
 const LOADTIME = 1500; // hard-code load-time, will need to change this to a more dynamic solution
-const DURATION_PERCENTAGE = 0.15; // percentage of video watched to trigger popup
+const DURATION_PERCENTAGE = 0.75; // percentage of video watched to trigger popup
 
 // URL FILTERS
 watchTimeFilter = { // filter for web page to run content script
@@ -24,7 +24,8 @@ const processMessage = {
     "sendingVideoInfo": handleSendingVideoInfo,
     "saveSessionWatchtimes": handleSaveSessionWatchtimes,
     "processAlreadyShown": handleProcessAlreadyShown,
-    "openDashboard": handleOpenDashboard
+    "openDashboard": handleOpenDashboard,
+    "log": (message, sender, sendResponse) => {console.log(`URGENT LOG SENT FROM '${sender}': '${message}'`)}    
 }
 
 // MESSAGE HANDLERS
@@ -98,34 +99,38 @@ function handleSendingVideoInfo(message, sender, sendResponse) { // passes thru 
 
     if (!sessionWatchtimes.hasOwnProperty(url)) {
         sessionWatchtimes[url] = newWatchedTime;
-        console.log("New session video added")
+        //console.log("New session video added")
     }
     
     else {
-        console.log("Updating current session video");
+        //console.log("Updating current session video");
         const prevWatchTime = sessionWatchtimes[url];
         sessionWatchtimes[url] += newWatchedTime;
         
-        chrome.storage.session.get(["alreadyShown"], (response) => {
-            const alreadyShown = response.alreadyShown;
-            if (!alreadyShown && prevWatchTime + newWatchedTime >= DURATION_PERCENTAGE * durationInSecs) {
-                chrome.storage.session.set({"alreadyShown": true});
-                console.log(`Video watched for more than ${DURATION_PERCENTAGE * 100}% of its duration`);
-                chrome.action.setPopup({popup: "addVideoSuggestion.html"});
-                chrome.action.openPopup();
-                chrome.action.setPopup({popup: "mediaManager.html"});
-                
-            }
-            const percentWatched = (prevWatchTime + newWatchedTime) / durationInSecs;
-            console.log("Percent watched: ", (percentWatched * 100).toFixed(2) );   
-        });          
+        const alreadyShown = message.content.alreadyShown;
+        console.log("Already shown: ", alreadyShown);
+        
+        const savedVideos = message.content.savedVideos;
+        console.log("Saved videos: ", savedVideos);
+        if (!savedVideos.hasOwnProperty(url) && !alreadyShown && prevWatchTime + newWatchedTime >= DURATION_PERCENTAGE * durationInSecs) {
+            chrome.storage.session.set({"alreadyShown": true});
+            console.log(`Video watched for more than ${DURATION_PERCENTAGE * 100}% of its duration`);
+            chrome.action.setPopup({popup: "addVideoSuggestion.html"});
+            chrome.action.openPopup();
+            chrome.action.setPopup({popup: "mediaManager.html"});
+            
+        }
+        const percentWatched = (prevWatchTime + newWatchedTime) / durationInSecs;
+        console.log("Percent watched: ", (percentWatched * 100).toFixed(2) );   
+        
+                 
     }
     console.log(sessionWatchtimes );
     sendResponse({"sessionWatchtimes": sessionWatchtimes, "do": "nothing"});
 }
 
 function handleSaveSessionWatchtimes(message, sender, sendResponse) {
-    console.log("Saving session watchtimes");
+    //console.log("Saving session watchtimes");
     chrome.storage.session.set({"sessionWatchtimes": message.content});
     sendResponse({"status": "received"});
 }
@@ -159,8 +164,8 @@ function getUpdatedVideoInfo() { // used when user goes from one youtube video t
 }
 
 
-function processWatchTime(newWatchedTime, videoName, videoUrl, videoDuration, sessionWatchtimes) {
-    chrome.runtime.sendMessage({action: "sendingVideoInfo", content: {"newWatchedTime": newWatchedTime, "videoName": videoName, "videoUrl": videoUrl, "videoDuration": videoDuration, "sessionWatchtimes": sessionWatchtimes}}, (response) => {
+function processWatchTime(newWatchedTime, videoName, videoUrl, videoDuration, sessionWatchtimes, savedVideos, alreadyShown) {
+    chrome.runtime.sendMessage({action: "sendingVideoInfo", content: {"newWatchedTime": newWatchedTime, "videoName": videoName, "videoUrl": videoUrl, "videoDuration": videoDuration, "sessionWatchtimes": sessionWatchtimes, "savedVideos": savedVideos, "alreadyShown": alreadyShown}}, (response) => {
         if (response.do === "openSuggestedVideoPopup") {
             console.log("Opening suggested video popup");
         };
@@ -219,17 +224,20 @@ chrome.webRequest.onCompleted.addListener((details) => {
     console.log(details);
     const url = details.url;
 
-    chrome.storage.session.get(["currentVideoName", "currentVideoUrl", "currentVideoDuration", "sessionWatchtimes"], (result) => {
-        
+    chrome.storage.session.get(["currentVideoName", "currentVideoUrl", "currentVideoDuration", "sessionWatchtimes", "alreadyShown"], (result) => {  
         if (url.includes("el=adunit")) {
             console.log("Currently playing ad");
             return;
         } else { // Get video info  
-            const newWatchedTime = extractWatchTime(url, regex);
-            chrome.scripting.executeScript({
-                target : {tabId : details.tabId},
-                func : processWatchTime,
-                args: [newWatchedTime, result.currentVideoName, result.currentVideoUrl, result.currentVideoDuration, result.sessionWatchtimes || {}]     
+            chrome.storage.local.get(["savedVideos"], (savedResult) => {
+                const newWatchedTime = extractWatchTime(url, regex);
+                console.log("New watched time: ", newWatchedTime);
+                setTimeout(() => {
+                chrome.scripting.executeScript({
+                    target : {tabId : details.tabId},
+                    func : processWatchTime,
+                    args: [newWatchedTime, result.currentVideoName, result.currentVideoUrl, result.currentVideoDuration, result.sessionWatchtimes || {}, savedResult.savedVideos || {}, result.alreadyShown]     
+                }), LOADTIME});
             });
         }
     });
@@ -264,7 +272,7 @@ function getActiveTabVideoInfo(tabId, callback) {
         if (tab.url && tab.title) {   
             videoInfo["url"] = tab.url;
             videoInfo["title"] = tab.title;
-            console.log("Tab info from getActiveTab", tab);
+            //console.log("Tab info from getActiveTab", tab);
         } else {
             callback("no tab info found");
         }
@@ -300,7 +308,7 @@ function getActiveTabVideoInfo(tabId, callback) {
 
 
 chrome.tabs.onActivated.addListener((activeInfo) => {
-    chrome.storage.session.set({"alreadyShown": false});
+    
     getActiveTabVideoInfo(activeInfo.tabId, (tabInfo) => {
         if (tabInfo && tabInfo.url) {
             if (tabInfo.url.startsWith("https://www.youtube.com/watch")) {
@@ -312,10 +320,11 @@ chrome.tabs.onActivated.addListener((activeInfo) => {
             console.log(tabInfo);
         }
     });
+    chrome.storage.session.set({"alreadyShown": false});
 });
 
 chrome.webNavigation.onCompleted.addListener((details) => { // event listener for when the page is loaded
-    chrome.storage.session.set({"alreadyShown": false});
+    
     setTimeout(() => {
         getActiveTabVideoInfo(details.tabId, (tabInfo) => {
             console.log("Tab info from onActivated", tabInfo);
@@ -327,12 +336,13 @@ chrome.webNavigation.onCompleted.addListener((details) => { // event listener fo
                 console.log(tabInfo);
             }
         });
+        chrome.storage.session.set({"alreadyShown": false});
     }, LOADTIME);
    
 }, videoFilter);
 
 chrome.webNavigation.onHistoryStateUpdated.addListener((details) => { // event listener for when the page is updated (e.g. clicking on a video)
-    chrome.storage.session.set({"alreadyShown": false});
+    
     setTimeout(() => {
         getActiveTabVideoInfo(details.tabId, (tabInfo) => {
             console.log("Tab info from onActivated", tabInfo);
@@ -344,9 +354,12 @@ chrome.webNavigation.onHistoryStateUpdated.addListener((details) => { // event l
                 console.log("Tab Info is not accessible in onHistoryUpdated.");
             }
         });
+        chrome.storage.session.set({"alreadyShown": false});
     }, LOADTIME);
 
 }, videoFilter);
+
+
 
 
 // HANDLE STORAGE CHANGES
