@@ -2,7 +2,7 @@ const savedMedia = document.querySelector("#savedVideos");
 
 chrome.runtime.sendMessage({ action: "getVideoInfo" }, (response) => {
     console.log("Data received in popup:", response);
-    const videoName = response.content;
+    const videoName = response.content.name;
     if (!videoName) {
         console.log("No video name provided");
         return;
@@ -12,7 +12,6 @@ chrome.runtime.sendMessage({ action: "getVideoInfo" }, (response) => {
 });
 
 
-
 chrome.runtime.sendMessage({action: "getSavedVideos"}, (response) => {
     console.log("Data received in popup:", response);
     
@@ -20,17 +19,16 @@ chrome.runtime.sendMessage({action: "getSavedVideos"}, (response) => {
         return;
     }
     savedMedia.innerHTML = "";
-    if (Array.isArray(response)) {
-        response.forEach((videoData) => {
-            const li = document.createElement("li");
-            li.textContent = videoData; 
-            savedMedia.appendChild(li);
-        });
-    } else {
-        console.error(response);
-    }
+    for (const [url, name] of Object.entries(response)) {
+        const li = document.createElement("li");
+        const a = document.createElement("a");
+        a.textContent = name;
+        a.href = url;
+        a.target = "_blank";
+        li.appendChild(a);
+        savedMedia.appendChild(li);
+    } 
 });
-
 
 let addThisVideoButton = document.querySelector("#addThisVideo");
 
@@ -45,13 +43,39 @@ addThisVideoButton.addEventListener("click", () => {
         }
         console.log(videoName);
         chrome.runtime.sendMessage({ action: "saveVideo", content: videoName }, (response) => {
+            if (response.status === "duplicate") {
+                addThisVideoButton.textContent = "Already saved!";
+                addThisVideoButton.style.backgroundColor = "red";
+                return;
+            }
+            else {
+                addThisVideoButton.textContent = response.status;
+                addThisVideoButton.style.backgroundColor = "green";
+            }
             console.log("Video saved:", response);
+            chrome.runtime.sendMessage({action: "getSavedVideos"}, (response) => {
+                console.log("Data received in popup:", response);
+                
+                
+                if (!response) {
+                    return;
+                }
+                savedMedia.innerHTML = "";
+                for (const [url, name] of Object.entries(response)) {
+                    const li = document.createElement("li");
+                    const a = document.createElement("a");
+                    a.textContent = name;
+                    a.href = url;
+                    a.target = "_blank";
+                    li.appendChild(a);
+                    savedMedia.appendChild(li);
+                } 
+                //addThisVideoButton.textContent = "Added!";
+                //addThisVideoButton.style.backgroundColor = "green";
+            });
         });
-        const li = document.createElement("li");
-        li.textContent = videoName;
-        savedMedia.appendChild(li);
-        addThisVideoButton.textContent = "Added!";
-        addThisVideoButton.style.backgroundColor = "green";
+        
+        
     });
     
 });
