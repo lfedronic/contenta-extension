@@ -23,7 +23,6 @@ const processMessage = {
     "getVideoDuration": handleGetVideoDuration,
     "sendingVideoInfo": handleSendingVideoInfo,
     "saveSessionWatchtimes": handleSaveSessionWatchtimes,
-    "processAlreadyShown": handleProcessAlreadyShown,
     "openDashboard": handleOpenDashboard,
     "log": (message, sender, sendResponse) => {console.log(`URGENT LOG SENT FROM '${sender}': '${message}'`)}    
 }
@@ -103,23 +102,36 @@ function handleSendingVideoInfo(message, sender, sendResponse) { // passes thru 
     }
     
     else {
-        ////console.log("Updating current session video");
+       
         const prevWatchTime = sessionWatchtimes[url];
         sessionWatchtimes[url] += newWatchedTime;
         
-        const alreadyShown = message.content.alreadyShown;
-        //console.log("Already shown: ", alreadyShown);
-        
         const savedVideos = message.content.savedVideos;
-        //console.log("Saved videos: ", savedVideos);
-        if (!savedVideos.hasOwnProperty(url) && !alreadyShown && prevWatchTime + newWatchedTime >= DURATION_PERCENTAGE * durationInSecs) {
-            chrome.storage.session.set({"alreadyShown": true});
-            //console.log(`Video watched for more than ${DURATION_PERCENTAGE * 100}% of its duration`);
-            chrome.action.setPopup({popup: "addVideoSuggestion.html"});
-            chrome.action.openPopup();
-            chrome.action.setPopup({popup: "mediaManager.html"});
-            
-        }
+        
+        chrome.storage.session.get(["suggestedSaves"], (result) => {
+        
+            const suggestedSaves = new Set(result.suggestedSaves || []);
+            if (!suggestedSaves.has(url) && !savedVideos.hasOwnProperty(url) && prevWatchTime + newWatchedTime >= DURATION_PERCENTAGE * durationInSecs) {
+                // Add the new URL to the Set
+                suggestedSaves.add(url);
+    
+                // Convert the Set back to an array for storage (chrome.storage only supports serializable data)
+                chrome.storage.session.set({ "suggestedSaves": Array.from(suggestedSaves) }, () => {
+                    console.log("Suggested save: ", url);
+    
+                    chrome.storage.session.get("suggestedSaves", (result) => {
+                        console.log("Suggested saves: ", result.suggestedSaves);
+    
+                        // Perform actions after saving
+                        chrome.action.setPopup({ popup: "addVideoSuggestion.html" });
+                        chrome.action.openPopup();
+                        chrome.action.setPopup({ popup: "mediaManager.html" });
+                    });
+                });
+            }
+        });
+        
+        
         const percentWatched = (prevWatchTime + newWatchedTime) / durationInSecs;
         //console.log("Percent watched: ", (percentWatched * 100).toFixed(2) );   
         
@@ -231,13 +243,13 @@ chrome.webRequest.onCompleted.addListener((details) => {
         } else { // Get video info  
             chrome.storage.local.get(["savedVideos"], (savedResult) => {
                 const newWatchedTime = extractWatchTime(url, regex);
-                //console.log("New watched time: ", newWatchedTime);
-                setTimeout(() => {
-                chrome.scripting.executeScript({
-                    target : {tabId : details.tabId},
-                    func : processWatchTime,
-                    args: [newWatchedTime, result.currentVideoName, result.currentVideoUrl, result.currentVideoDuration, result.sessionWatchtimes || {}, savedResult.savedVideos || {}, result.alreadyShown]     
-                }), LOADTIME});
+                if (newWatchedTime) {
+                    chrome.scripting.executeScript({
+                        target: {tabId: details.tabId},
+                        func: processWatchTime,
+                        args: [newWatchedTime, result.currentVideoName, result.currentVideoUrl, result.currentVideoDuration, result.sessionWatchtimes || {}, savedResult.savedVideos || {}, result.alreadyShown]     
+                    });
+                }
             });
         }
     });
@@ -361,6 +373,8 @@ chrome.webNavigation.onHistoryStateUpdated.addListener((details) => { // event l
 
 }, videoFilter);
 
+// ACTIVE TAB MANAGEMENT
+
 
 chrome.webNavigation.onCompleted.addListener((details) => { 
     if (!details.frameId == 0) {
@@ -372,3 +386,4 @@ chrome.webNavigation.onCompleted.addListener((details) => {
 chrome.tabs.onActivated.addListener((activeInfo) => {
     console.log(activeInfo);
 });
+
