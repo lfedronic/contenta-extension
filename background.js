@@ -23,7 +23,6 @@ const processMessage = {
     "getVideoDuration": handleGetVideoDuration,
     "sendingVideoInfo": handleSendingVideoInfo,
     "saveSessionWatchtimes": handleSaveSessionWatchtimes,
-    "processAlreadyShown": handleProcessAlreadyShown,
     "openDashboard": handleOpenDashboard,
     "log": (message, sender, sendResponse) => {console.log(`URGENT LOG SENT FROM '${sender}': '${message}'`)}    
 }
@@ -31,34 +30,34 @@ const processMessage = {
 // MESSAGE HANDLERS
 
 function handleGetVideoInfo(message, sender, sendResponse) {
-    console.log("GET DATA CALLED!!!");
+    //console.log("GET DATA CALLED!!!");
     chrome.storage.session.get(["currentVideoName", "currentVideoUrl"], (result) => {
-        console.log("Current video name: ", result.currentVideoName);
+        //console.log("Current video name: ", result.currentVideoName);
         sendResponse({"content": {"name": result.currentVideoName, "url": result.currentVideoUrl}});
     });
 }
 
 function handleSaveVideo(message, sender, sendResponse) {
-    console.log("SAVE VIDEO CALLED!!!");
-    console.log("Requested from: ", sender);
+    //console.log("SAVE VIDEO CALLED!!!");
+    //console.log("Requested from: ", sender);
 
     chrome.storage.local.get(["savedVideos"], (result) => {
         chrome.storage.session.get(["currentVideoUrl", "currentVideoName", "currentThumbnailUrl"], (currentResult) => {
             if (!currentResult.currentVideoName || !currentResult.currentVideoUrl || !currentResult.currentThumbnailUrl) {
-                console.log("No video to save");
+                //console.log("No video to save");
                 sendResponse({"status": "incomplete"});
                 return;
             }
             const savedVideos = result.savedVideos || {};
             if (savedVideos.hasOwnProperty(currentResult.currentVideoUrl)) {
-                console.log("Video already saved");
+                //console.log("Video already saved");
                 sendResponse({"status": "duplicate"});
                 return;
             }
             savedVideos[currentResult.currentVideoUrl] = {"name": currentResult.currentVideoName, "timeSaved": new Date().toLocaleString(), "thumbnailUrl": currentResult.currentThumbnailUrl};
-            console.log(savedVideos);
+            //console.log(savedVideos);
             chrome.storage.local.set({"savedVideos": savedVideos}, () => {
-                console.log("Video saved!");
+                //console.log("Video saved!");
             });
             sendResponse({"status": "received"});
         });
@@ -68,20 +67,20 @@ function handleSaveVideo(message, sender, sendResponse) {
     
 
 function handleGetSavedVideos(message, sender, sendResponse) {
-    console.log("GET SAVED VIDEOS");
+    //console.log("GET SAVED VIDEOS");
     chrome.storage.local.get(["savedVideos"], (result) => {
-        console.log(result.savedVideos);
+        //console.log(result.savedVideos);
         sendResponse(result.savedVideos || {});
     });
 }
 
 function handleGetVideoDuration(message, sender, sendResponse) {
-    console.log("GET DURATION CALLED!!!");
+    //console.log("GET DURATION CALLED!!!");
     const videoInfo = JSON.parse(document.querySelector("#microformat > player-microformat-renderer > script").innerHTML); // simple way to get the video info
     const duration = parseInt(videoInfo.duration.match(/\d+/)[0], 10);
     chrome.storage.session.set({"currentVideoDuration": duration});
     if (!duration) {
-        console.log("No duration found");
+        //console.log("No duration found");
         sendResponse({"status": "incomplete", "duration": null});
         return;
     }
@@ -99,38 +98,51 @@ function handleSendingVideoInfo(message, sender, sendResponse) { // passes thru 
 
     if (!sessionWatchtimes.hasOwnProperty(url)) {
         sessionWatchtimes[url] = newWatchedTime;
-        //console.log("New session video added")
+        ////console.log("New session video added")
     }
     
     else {
-        //console.log("Updating current session video");
+       
         const prevWatchTime = sessionWatchtimes[url];
         sessionWatchtimes[url] += newWatchedTime;
         
-        const alreadyShown = message.content.alreadyShown;
-        console.log("Already shown: ", alreadyShown);
-        
         const savedVideos = message.content.savedVideos;
-        console.log("Saved videos: ", savedVideos);
-        if (!savedVideos.hasOwnProperty(url) && !alreadyShown && prevWatchTime + newWatchedTime >= DURATION_PERCENTAGE * durationInSecs) {
-            chrome.storage.session.set({"alreadyShown": true});
-            console.log(`Video watched for more than ${DURATION_PERCENTAGE * 100}% of its duration`);
-            chrome.action.setPopup({popup: "addVideoSuggestion.html"});
-            chrome.action.openPopup();
-            chrome.action.setPopup({popup: "mediaManager.html"});
-            
-        }
+        
+        chrome.storage.session.get(["suggestedSaves"], (result) => {
+        
+            const suggestedSaves = new Set(result.suggestedSaves || []);
+            if (!suggestedSaves.has(url) && !savedVideos.hasOwnProperty(url) && prevWatchTime + newWatchedTime >= DURATION_PERCENTAGE * durationInSecs) {
+                // Add the new URL to the Set
+                suggestedSaves.add(url);
+    
+                // Convert the Set back to an array for storage (chrome.storage only supports serializable data)
+                chrome.storage.session.set({ "suggestedSaves": Array.from(suggestedSaves) }, () => {
+                    console.log("Suggested save: ", url);
+    
+                    chrome.storage.session.get("suggestedSaves", (result) => {
+                        console.log("Suggested saves: ", result.suggestedSaves);
+    
+                        // Perform actions after saving
+                        chrome.action.setPopup({ popup: "addVideoSuggestion.html" });
+                        chrome.action.openPopup();
+                        chrome.action.setPopup({ popup: "mediaManager.html" });
+                    });
+                });
+            }
+        });
+        
+        
         const percentWatched = (prevWatchTime + newWatchedTime) / durationInSecs;
-        console.log("Percent watched: ", (percentWatched * 100).toFixed(2) );   
+        //console.log("Percent watched: ", (percentWatched * 100).toFixed(2) );   
         
                  
     }
-    console.log(sessionWatchtimes );
+    //console.log(sessionWatchtimes );
     sendResponse({"sessionWatchtimes": sessionWatchtimes, "do": "nothing"});
 }
 
 function handleSaveSessionWatchtimes(message, sender, sendResponse) {
-    //console.log("Saving session watchtimes");
+    ////console.log("Saving session watchtimes");
     chrome.storage.session.set({"sessionWatchtimes": message.content});
     sendResponse({"status": "received"});
 }
@@ -142,7 +154,7 @@ function handleProcessAlreadyShown(message, sender, sendResponse) {
         chrome.storage.session.set({"alreadyShown": false});
     } else {
         chrome.storage.session.get(["alreadyShown"], (result) => {
-            console.log("Already shown: ", result.alreadyShown);
+            //console.log("Already shown: ", result.alreadyShown);
             sendResponse({"content": result.alreadyShown});
             return;
         });
@@ -158,7 +170,7 @@ function handleOpenDashboard(message, sender, sendResponse) {
 
 function getUpdatedVideoInfo() { // used when user goes from one youtube video to the next 
     const videoInfo = document.querySelector("head > title").textContent.replace(" - YouTube", "");
-    console.log("Video info: ", videoInfo);
+    //console.log("Video info: ", videoInfo);
     chrome.storage.session.set({"currentVideoName": videoInfo.name, "currentVideoUrl": videoInfo.url, "currentThumbnailUrl": videoInfo.thumbnailUrl});
     return videoInfo;
 }
@@ -167,9 +179,9 @@ function getUpdatedVideoInfo() { // used when user goes from one youtube video t
 function processWatchTime(newWatchedTime, videoName, videoUrl, videoDuration, sessionWatchtimes, savedVideos, alreadyShown) {
     chrome.runtime.sendMessage({action: "sendingVideoInfo", content: {"newWatchedTime": newWatchedTime, "videoName": videoName, "videoUrl": videoUrl, "videoDuration": videoDuration, "sessionWatchtimes": sessionWatchtimes, "savedVideos": savedVideos, "alreadyShown": alreadyShown}}, (response) => {
         if (response.do === "openSuggestedVideoPopup") {
-            console.log("Opening suggested video popup");
+            //console.log("Opening suggested video popup");
         };
-        console.log("Returning watchtimes: ", response.sessionWatchtimes);
+        //console.log("Returning watchtimes: ", response.sessionWatchtimes);
         chrome.runtime.sendMessage({action: "saveSessionWatchtimes", content: response.sessionWatchtimes});
     });
 }
@@ -200,11 +212,11 @@ function extractWatchTime(url, regex){
             newWatchedTime += etValues[i] - stValues[i];
         }
         
-        console.log("st:", stValues);
-        console.log("et:", etValues);
+        //console.log("st:", stValues);
+        //console.log("et:", etValues);
         return newWatchedTime;
     } else {
-        console.log("No match found");
+        //console.log("No match found");
         return null; // No match foundo
     }
 
@@ -221,23 +233,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 chrome.webRequest.onCompleted.addListener((details) => {
     const regex = /(?:^|&)st=([^&]*)&et=([^&]*)/; // Regular expression to extract st and et values
-    console.log(details);
+    //console.log(details);
     const url = details.url;
 
     chrome.storage.session.get(["currentVideoName", "currentVideoUrl", "currentVideoDuration", "sessionWatchtimes", "alreadyShown"], (result) => {  
         if (url.includes("el=adunit")) {
-            console.log("Currently playing ad");
+            //console.log("Currently playing ad");
             return;
         } else { // Get video info  
             chrome.storage.local.get(["savedVideos"], (savedResult) => {
                 const newWatchedTime = extractWatchTime(url, regex);
-                console.log("New watched time: ", newWatchedTime);
-                setTimeout(() => {
-                chrome.scripting.executeScript({
-                    target : {tabId : details.tabId},
-                    func : processWatchTime,
-                    args: [newWatchedTime, result.currentVideoName, result.currentVideoUrl, result.currentVideoDuration, result.sessionWatchtimes || {}, savedResult.savedVideos || {}, result.alreadyShown]     
-                }), LOADTIME});
+                if (newWatchedTime) {
+                    chrome.scripting.executeScript({
+                        target: {tabId: details.tabId},
+                        func: processWatchTime,
+                        args: [newWatchedTime, result.currentVideoName, result.currentVideoUrl, result.currentVideoDuration, result.sessionWatchtimes || {}, savedResult.savedVideos || {}, result.alreadyShown]     
+                    });
+                }
             });
         }
     });
@@ -249,7 +261,7 @@ chrome.webRequest.onCompleted.addListener((details) => {
 // HANDLE EXTENSION OPENING
 
 chrome.action.onClicked.addListener((tab) => {
-    console.log("Action clicked!");
+    //console.log("Action clicked!");
     chrome.storage.session.get(["currentVideoName", "currentVideoUrl"], (result) => {
         chrome.action.setPopup({popup: "mediaManager.html"});
         chrome.action.openPopup();
@@ -269,41 +281,43 @@ function getActiveTabVideoInfo(tabId, callback) {
     let videoInfo = {};
 
     chrome.tabs.get(tabId, (tab) => {
-        if (tab.url && tab.title) {   
+        if (tab && tab.url && tab.url.startsWith("https://www.youtube.com/watch")) {  
+
             videoInfo["url"] = tab.url;
             videoInfo["title"] = tab.title;
-            //console.log("Tab info from getActiveTab", tab);
+            
+            chrome.scripting.executeScript({
+                target: {tabId: tabId},
+                func: getDuration
+            }, (response) => {
+                if (response) {
+                    videoInfo["duration"] = response[0].result;
+
+                    chrome.scripting.executeScript({
+                        target: {tabId: tabId},
+                        func: getThumbnailUrl
+                    }, (response) => {
+                        if (response) {
+                            videoInfo["thumbnailUrl"] = response[0].result;
+                            callback(videoInfo);
+                            return;
+                        }
+                        else {
+                            callback("no thumbnail found");
+                            return;
+                        }
+                    });
+                }
+                else {
+                    callback("no duration found");
+                    return;
+                }            
+            });
         } else {
             callback("no tab info found");
+            return;
         }
-    });
-
-    chrome.scripting.executeScript({
-        target: {tabId: tabId},
-        func: getDuration
-    }, (response) => {
-        if (response) {
-            videoInfo["duration"] = response[0].result;
-        }
-        else {
-            callback("no duration found");
-        }
-        
-    });
-
-    chrome.scripting.executeScript({
-        target: {tabId: tabId},
-        func: getThumbnailUrl
-    }, (response) => {
-        if (response) {
-            videoInfo["thumbnailUrl"] = response[0].result;
-            callback(videoInfo);
-        }
-        else {
-            callback("no thumbnail found");
-        }
-    });
-    
+    });   
 }
 
 
@@ -316,8 +330,8 @@ chrome.tabs.onActivated.addListener((activeInfo) => {
             }
         }
         else {
-            console.log("Tab Info is not accessible in onActivated.");
-            console.log(tabInfo);
+            //console.log("Tab Info is not accessible in onActivated.");
+            //console.log(tabInfo);
         }
     });
     chrome.storage.session.set({"alreadyShown": false});
@@ -327,13 +341,13 @@ chrome.webNavigation.onCompleted.addListener((details) => { // event listener fo
     
     setTimeout(() => {
         getActiveTabVideoInfo(details.tabId, (tabInfo) => {
-            console.log("Tab info from onActivated", tabInfo);
+            //console.log("Tab info from onActivated", tabInfo);
             if (tabInfo) {
                 chrome.storage.session.set({"currentVideoUrl": tabInfo.url, "currentVideoName": tabInfo.title.replace(" - YouTube", ""), "currentVideoDuration": tabInfo.duration, "currentThumbnailUrl": tabInfo.thumbnailUrl});
             }
             else {
-                console.log("Tab Info is not accessible in web nav.");
-                console.log(tabInfo);
+                //console.log("Tab Info is not accessible in web nav.");
+                //console.log(tabInfo);
             }
         });
         chrome.storage.session.set({"alreadyShown": false});
@@ -345,13 +359,13 @@ chrome.webNavigation.onHistoryStateUpdated.addListener((details) => { // event l
     
     setTimeout(() => {
         getActiveTabVideoInfo(details.tabId, (tabInfo) => {
-            console.log("Tab info from onActivated", tabInfo);
+            //console.log("Tab info from onActivated", tabInfo);
             if (tabInfo) {
-                console.log("Duration info: ", tabInfo.duration);
+                //console.log("Duration info: ", tabInfo.duration);
                 chrome.storage.session.set({"currentVideoUrl": tabInfo.url, "currentVideoName": tabInfo.title.replace(" - YouTube", ""), "currentVideoDuration": tabInfo.duration, "currentThumbnailUrl": tabInfo.thumbnailUrl});
             }
             else {
-                console.log("Tab Info is not accessible in onHistoryUpdated.");
+                //console.log("Tab Info is not accessible in onHistoryUpdated.");
             }
         });
         chrome.storage.session.set({"alreadyShown": false});
@@ -359,17 +373,17 @@ chrome.webNavigation.onHistoryStateUpdated.addListener((details) => { // event l
 
 }, videoFilter);
 
+// ACTIVE TAB MANAGEMENT
 
 
+chrome.webNavigation.onCompleted.addListener((details) => { 
+    if (!details.frameId == 0) {
+        return;
+    }
+    console.log(details);
+});
 
-// HANDLE STORAGE CHANGES
-
-
-
-
-// OLD CODE
-
-// const alternateVideoInfo = document.querySelector("#movie_player > div.html5-video-container > video"); // doesn't work at the moment
-
-    
+chrome.tabs.onActivated.addListener((activeInfo) => {
+    console.log(activeInfo);
+});
 
