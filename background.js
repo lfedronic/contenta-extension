@@ -1,6 +1,9 @@
 // CONSTANTS
 const LOADTIME = 1500; // hard-code load-time, will need to change this to a more dynamic solution
 const DURATION_PERCENTAGE = 0.75; // percentage of video watched to trigger popup
+const SCROLL_DT = 2000; // time interval for scroll rate tracking
+const SCROLL_RATE_THRESHOLD = 0.75; 
+const SKIPS_THRESHOLD = 2; 
 
 // URL FILTERS
 watchTimeFilter = { // filter for web page to run content script
@@ -24,7 +27,8 @@ const processMessage = {
     "sendingVideoInfo": handleSendingVideoInfo,
     "saveSessionWatchtimes": handleSaveSessionWatchtimes,
     "openDashboard": handleOpenDashboard,
-    "log": (message, sender, sendResponse) => {console.log(`URGENT LOG SENT FROM '${sender}': '${message}'`)}    
+    "log": (message, sender, sendResponse) => {console.log(`URGENT LOG SENT FROM '${sender}': '${message}'`)},
+    "disqualifyArticle": handleDisqualifyArticle,   
 }
 
 // MESSAGE HANDLERS
@@ -166,6 +170,14 @@ function handleOpenDashboard(message, sender, sendResponse) {
     chrome.tabs.create({url: "dashboard.html"});
 }
 
+function handleDisqualifyArticle(message, sender, sendResponse) {
+    chrome.storage.session.get(["currentArticleURL", "disqualifiedArticles"], (result) => {
+        const disqualifiedArticles = new Set(result.disqualifiedArticles || []);
+        disqualifiedArticles.add(result.currentArticleURL);
+        chrome.storage.session.set({"disqualifiedArticles": Array.from(disqualifiedArticles)});
+    });
+}
+
 // HELPER FUNCTIONS
 
 function getUpdatedVideoInfo() { // used when user goes from one youtube video to the next 
@@ -281,7 +293,7 @@ function getActiveTabVideoInfo(tabId, callback) {
     let videoInfo = {};
 
     chrome.tabs.get(tabId, (tab) => {
-        if (tab && tab.url && tab.url.startsWith("https://www.youtube.com/watch")) {  
+        if (tab && tab.url && tab.title && tab.url.startsWith("https://www.youtube.com/watch")) {  
 
             videoInfo["url"] = tab.url;
             videoInfo["title"] = tab.title;
@@ -375,12 +387,94 @@ chrome.webNavigation.onHistoryStateUpdated.addListener((details) => { // event l
 
 // ACTIVE TAB MANAGEMENT
 
+// function insertDiv() {
+//     const div = document.createElement("div");
+//     div.id = "testDiv";
+//     const body = document.querySelector("body");
+//     //body.style = "background-color: black";
+//     body.appendChild(div);
+//     //body.style = "background-color: red";
+//     addEventListener("scroll", () => {
+        
+//         // window.scrollY distance from top of page 
+//         // const pageHeight = document.documentElement.scrollHeight;
+//         // console.log('Page height:', pageHeight);
+
+//         // const scrollTop = window.scrollY;
+//         // console.log("Distance from bottom of page:", pageHeight - scrollTop - window.innerHeight);
+
+//         const totalHeight = document.documentElement.scrollHeight - window.innerHeight;
+
+//         const scrollPercentage = (window.scrollY / totalHeight) * 100;
+//         //console.log("Num pixels read: ", window.scrollY);
+//         console.log("Num lines read:", window.scrollY / 25);
+//         console.log('Scroll percentage:', scrollPercentage);
+//         console.log("Num minutes spent reading: ", window.scrollY / 25 / 60);
+
+//         // const viewportHeight = window.innerHeight;  // height of visible part of page 
+//         // console.log('Viewport height:', viewportHeight);
+
+//     });
+// }
+
+
+function trackScrollRate(SCROLL_DT, SCROLL_RATE_THRESHOLD, SKIPS_THRESHOLD) {
+    let scrolledY = 0;
+    let likelySkips = 0;
+    setTimeout(() => {
+        const head = document.head.innerHTML;
+        const body = document.body.innerHTML;
+        if ((body.includes("author") && body.includes("article")) || ((head.includes("author") && (head.includes("article"))) )) {
+            console.log("Article detected");
+        }         
+    },3000);
+    const intervalId = setInterval(() => {
+        const totalHeight = document.documentElement.scrollHeight - window.innerHeight;
+        const prevScrolledY = scrolledY;
+        scrolledY = window.scrollY;
+        const rateOfScroll = (scrolledY - prevScrolledY) / SCROLL_DT;
+        if (likelySkips > SKIPS_THRESHOLD) {
+            console.log("Disinterest detected");
+            chrome.runtime.sendMessage({action: "disqualifyArticle"});
+            clearInterval(intervalId);
+        }
+        if (rateOfScroll > SCROLL_RATE_THRESHOLD) {
+            console.log("Likely skip detected");
+            likelySkips += 1;
+        }
+        console.log("Rate of scroll:", rateOfScroll);
+        // console.log("Scroll percentage:", (window.scrollY / totalHeight) * 100);
+        // console.log("Num lines read:", window.scrollY / 25);
+        // console.log("Num minutes spent reading:", window.scrollY / 25 / 60);
+    }, SCROLL_DT);
+    
+}
+
+
+
 
 chrome.webNavigation.onCompleted.addListener((details) => { 
     if (!details.frameId == 0) {
         return;
     }
     console.log(details);
+    chrome.scripting.executeScript({
+        target: {tabId: details.tabId},
+        func: trackScrollRate,
+        args: [SCROLL_DT, SCROLL_RATE_THRESHOLD, SKIPS_THRESHOLD]
+    });
+});
+
+chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
+    if (!details.frameId == 0) {
+        return;
+    }
+    console.log(details);
+    chrome.scripting.executeScript({
+        target: {tabId: details.tabId},
+        func: trackScrollRate,
+        args: [SCROLL_DT, SCROLL_RATE_THRESHOLD, SKIPS_THRESHOLD]
+    });
 });
 
 chrome.tabs.onActivated.addListener((activeInfo) => {
