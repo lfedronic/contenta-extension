@@ -14,5 +14,7 @@ Contenta isn’t about collecting clicks — it’s about making it easier to re
 6. Start watching YouTube — the extension handles the rest!
 
 Gallery
+
 ![screenshot](contentagallery.png)
-![screenshot](contentaaddimage.png)
+
+![screenshot](contentaaddvideo.png)
